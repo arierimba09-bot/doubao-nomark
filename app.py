@@ -124,6 +124,30 @@ async def parse_doubao_get(url: str, return_raw: bool = False):
         raise HTTPException(status_code=500, detail="图片解析失败，请检查链接是否正确")
 
 
+
+
+@app.get("/debug-dola")
+async def debug_dola():
+    from doubao_parser.video import DOUBAO_HEADERS, _extract_fallback_apis
+    url = "https://www.dola.com/thread/xZEnUfMdaJhZydLoV"
+    result = {"stage": "start"}
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            result["stage"] = "fetch_page"
+            page = await client.get(url, headers=DOUBAO_HEADERS)
+            result["http_status"] = page.status_code
+            result["final_host"] = page.url.host
+            result["html_length"] = len(page.text)
+            result["content_type"] = page.headers.get("content-type", "")
+            result["stage"] = "extract_apis"
+            apis = _extract_fallback_apis(page.text)
+            result["api_count"] = len(apis)
+            result["stage"] = "complete"
+    except Exception as exc:
+        result["error_type"] = type(exc).__name__
+        result["error"] = str(exc)[:300]
+    return result
+
 @app.post("/parse-video", summary="解析豆包|云雀视频")
 async def parse_video(request: VideoRequest):
     try:
