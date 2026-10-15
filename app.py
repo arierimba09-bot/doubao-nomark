@@ -1,10 +1,12 @@
 import os
+import httpx
 from urllib.parse import urlparse
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, HttpUrl
 
@@ -167,6 +169,87 @@ async def parse_video_get(url: str, return_raw: bool = False):
         print(f"Exception: {e}")
         raise HTTPException(status_code=500, detail="视频解析失败，请检查链接是否正确")
 
+
+
+@app.get("/download-video")
+async def download_video(url: HttpUrl):
+    source = str(url)
+    parsed = urlparse(source)
+    host = (parsed.hostname or "").lower()
+
+    allowed_hosts = (
+        host == "dola.com"
+        or host.endswith(".dola.com")
+        or host == "byteimg.com"
+        or host.endswith(".byteimg.com")
+    )
+
+    if parsed.scheme not in ("https", "http") or not allowed_hosts:
+        raise HTTPException(
+            status_code=400,
+            detail="URL video bukan dari domain Dola yang diizinkan."
+        )
+
+    client = httpx.AsyncClient(
+        timeout=90,
+        follow_redirects=False
+    )
+
+    try:
+        request = client.build_request(
+            "GET",
+            source,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        response = await client.send(request, stream=True)
+
+        if response.status_code >= 300:
+            await response.aclose()
+            await client.aclose()
+            raise HTTPException(
+                status_code=502,
+                detail="Sumber video gagal diakses atau mengalihkan URL."
+            )
+
+        content_type = response.headers.get(
+            "content-type", ""
+        ).lower()
+
+        if "text/html" in content_type or "application/json" in content_type:
+            await response.aclose()
+            await client.aclose()
+            raise HTTPException(
+                status_code=502,
+                detail="Sumber mengembalikan halaman, bukan video."
+            )
+
+        async def stream_video():
+            try:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+            finally:
+                await response.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            stream_video(),
+            media_type="video/mp4",
+            headers={
+                "Content-Disposition":
+                    'attachment; filename="CreatorTools-Video.mp4"',
+                "X-Content-Type-Options": "nosniff"
+            },
+            background=BackgroundTask(client.aclose)
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await client.aclose()
+        raise HTTPException(
+            status_code=502,
+            detail="Gagal mengambil video sumber."
+        ) from exc
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
