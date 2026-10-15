@@ -138,6 +138,14 @@ async def debug_dola():
             result["http_status"] = page.status_code
             result["final_host"] = page.url.host
             result["html_length"] = len(page.text)
+            html_lower = page.text.lower()
+            result["markers"] = {
+                "fallback_api": "fallback_api" in html_lower,
+                "data_fn_args": "data-fn-args" in html_lower,
+                "modern_router": "modern-run-router-data-fn" in html_lower,
+                "video_info": "video_info" in html_lower,
+                "captcha": "captcha" in html_lower,
+            }
             result["content_type"] = page.headers.get("content-type", "")
             result["stage"] = "extract_apis"
             apis = _extract_fallback_apis(page.text)
