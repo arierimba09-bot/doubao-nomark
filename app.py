@@ -138,6 +138,8 @@ async def debug_dola():
             result["http_status"] = page.status_code
             result["final_host"] = page.url.host
             result["html_length"] = len(page.text)
+            result["html_start"] = " ".join(page.text[:1200].split())
+            result["html_end"] = " ".join(page.text[-500:].split())
             html_lower = page.text.lower()
             result["markers"] = {
                 "fallback_api": "fallback_api" in html_lower,
